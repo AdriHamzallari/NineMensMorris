@@ -1,0 +1,198 @@
+package model;
+
+public class Game {
+    private Board board;
+    private Player player1;
+    private Player player2;
+    private Player currentPlayer;
+    private GameState state;
+    private int selectedPos = -1;
+    private String message = "";
+    private Player winner = null;
+
+    public Game() {
+        board = new Board();
+        player1 = new Player(1, "Lojtari 1", new java.awt.Color(220, 80, 60));
+        player2 = new Player(2, "Lojtari 2", new java.awt.Color(60, 140, 220));
+        reset();
+    }
+
+    public void reset() {
+        board.reset();
+        player1.reset();
+        player2.reset();
+        currentPlayer = player1;
+        state = GameState.PLACING;
+        selectedPos = -1;
+        winner = null;
+        message = currentPlayer.getName() + " vendos gurin e parë!";
+    }
+
+    public boolean handleClick(int pos) {
+        if (state == GameState.GAME_OVER) return false;
+
+        if (state == GameState.PLACING) {
+            return handlePlacing(pos);
+        } else if (state == GameState.REMOVING) {
+            return handleRemoving(pos);
+        } else {
+            return handleMoving(pos);
+        }
+    }
+
+    private boolean handlePlacing(int pos) {
+        if (!board.isEmpty(pos)) {
+            message = "Pozicioni është i zënë!";
+            return false;
+        }
+        board.setCell(pos, currentPlayer.getId());
+        currentPlayer.placePiece();
+
+        if (board.formsMillWith(pos, currentPlayer.getId())) {
+            // formsMillWith already checked after placement
+            if (board.isMill(pos, currentPlayer.getId())) {
+                state = GameState.REMOVING;
+                message = currentPlayer.getName() + " formoi mulli! Hiq një gur të armikut.";
+                return true;
+            }
+        }
+
+        checkTransitionToMoving();
+        return true;
+    }
+
+    private boolean handleRemoving(int pos) {
+        int opponentId = (currentPlayer.getId() == 1) ? 2 : 1;
+        if (board.getCell(pos) != opponentId) {
+            message = "Duhet të heqësh gurin e armikut!";
+            return false;
+        }
+        if (board.isMill(pos, opponentId) && !board.allInMills(opponentId)) {
+            message = "Nuk mund të heqësh gurin që është në mulli!";
+            return false;
+        }
+        board.clearCell(pos);
+        getOpponent().removePiece();
+
+        if (checkWin()) return true;
+
+        checkTransitionToMoving();
+        return true;
+    }
+
+    private boolean handleMoving(int pos) {
+        boolean flying = (state == GameState.FLYING);
+
+        if (selectedPos == -1) {
+            // Select a piece
+            if (board.getCell(pos) != currentPlayer.getId()) {
+                message = "Zgjidh gurin tënd!";
+                return false;
+            }
+            selectedPos = pos;
+            message = "Zgjedhur pozicioni " + pos + ". Zgjidh destinacionin.";
+            return true;
+        } else {
+            // Try to move
+            if (pos == selectedPos) {
+                selectedPos = -1;
+                message = "Zgjedhja u anulua.";
+                return true;
+            }
+            if (board.getCell(pos) == currentPlayer.getId()) {
+                selectedPos = pos;
+                message = "Zgjedhur pozicioni " + pos + ". Zgjidh destinacionin.";
+                return true;
+            }
+            if (!board.isEmpty(pos)) {
+                message = "Pozicioni i zënë!";
+                return false;
+            }
+            if (!flying && !board.areNeighbors(selectedPos, pos)) {
+                message = "Lëvizja e pavlefshme! Duhet të lëvizësh te fqinji.";
+                return false;
+            }
+
+            board.clearCell(selectedPos);
+            board.setCell(pos, currentPlayer.getId());
+            int from = selectedPos;
+            selectedPos = -1;
+
+            if (board.isMill(pos, currentPlayer.getId())) {
+                state = GameState.REMOVING;
+                message = currentPlayer.getName() + " formoi mulli! Hiq një gur të armikut.";
+                return true;
+            }
+
+            if (checkWin()) return true;
+            switchPlayer();
+            return true;
+        }
+    }
+
+    private void checkTransitionToMoving() {
+        boolean p1Done = player1.getPiecesToPlace() == 0;
+        boolean p2Done = player2.getPiecesToPlace() == 0;
+
+        if (p1Done && p2Done) {
+            switchPlayerState();
+            return;
+        }
+        switchPlayer();
+    }
+
+    private void switchPlayerState() {
+        currentPlayer = (currentPlayer == player1) ? player2 : player1;
+        int pid = currentPlayer.getId();
+        int total = board.countPieces(pid);
+        if (total == 3) {
+            state = GameState.FLYING;
+        } else {
+            state = GameState.MOVING;
+        }
+        if (!board.canPlayerMove(pid, state == GameState.FLYING)) {
+            winner = getOpponent();
+            state = GameState.GAME_OVER;
+            message = winner.getName() + " FITOI! Armiku nuk mund të lëvizë.";
+        } else {
+            message = currentPlayer.getName() + (state == GameState.FLYING ? " fluturon!" : " lëviz gurin.");
+        }
+    }
+
+    private void switchPlayer() {
+        if (state == GameState.PLACING) {
+            currentPlayer = (currentPlayer == player1) ? player2 : player1;
+            message = currentPlayer.getName() + " vendos gurin.";
+        } else {
+            switchPlayerState();
+        }
+    }
+
+    private boolean checkWin() {
+        Player opponent = getOpponent();
+        int opponentId = opponent.getId();
+        boolean opponentDone = opponent.getPiecesToPlace() == 0;
+
+        if (opponentDone && (board.countPieces(opponentId) + opponent.getPiecesToPlace()) < 3) {
+            winner = currentPlayer;
+            state = GameState.GAME_OVER;
+            message = currentPlayer.getName() + " FITOI! Armiku ka < 3 gurë.";
+            return true;
+        }
+        return false;
+    }
+
+    private Player getOpponent() {
+        return (currentPlayer == player1) ? player2 : player1;
+    }
+
+    // Getters
+    public Board getBoard() { return board; }
+    public Player getPlayer1() { return player1; }
+    public Player getPlayer2() { return player2; }
+    public Player getCurrentPlayer() { return currentPlayer; }
+    public GameState getState() { return state; }
+    public int getSelectedPos() { return selectedPos; }
+    public String getMessage() { return message; }
+    public Player getWinner() { return winner; }
+}
